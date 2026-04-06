@@ -1,55 +1,61 @@
 package com.notification_server.service;
 
 import com.notification_server.dto.NotificationDtos;
-import com.notification_server.entity.Notification;
-import com.notification_server.repository.NotificationRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class NotificationService {
 
-    private final NotificationRepository notificationRepository;
-    private final IpGeoService ipGeoService;
+    @Value("${app.booking-files-dir:./booking-notifications}")
+    private String bookingFilesDir;
 
     public NotificationDtos.NotificationResponse send(NotificationDtos.CreateNotificationRequest req) {
-        // Resolve country + city from the client IP (non-blocking best-effort)
-        String[] geo = ipGeoService.resolve(req.getClientIp());
+        String id = UUID.randomUUID().toString();
+        LocalDateTime createdAt = LocalDateTime.now();
 
-        Notification notification = new Notification();
-        notification.setUserId(req.getUserId());
-        notification.setMessage(req.getMessage());
-        notification.setClientIp(req.getClientIp());
-        notification.setCountry(geo[0]);
-        notification.setCity(geo[1]);
+        log.info("[NOTIFICATION] itinNumber={} userName={} message={}",
+                req.getItinNumber(), req.getUserName(), req.getMessage());
 
-        Notification saved = notificationRepository.save(notification);
+        writeBookingFile(id, createdAt, req);
 
-        log.info("[NOTIFICATION] userId={} country={} city={} message={}",
-                saved.getUserId(), saved.getCountry(), saved.getCity(), saved.getMessage());
-
-        return new NotificationDtos.NotificationResponse(saved);
+        NotificationDtos.NotificationResponse response = new NotificationDtos.NotificationResponse();
+        response.setItinNumber(req.getItinNumber());
+        response.setUserName(req.getUserName());
+        response.setUserEmail(req.getUserEmail());
+        response.setMessage(req.getMessage());
+        response.setCreatedAt(createdAt.toString());
+        return response;
     }
 
-    public List<NotificationDtos.NotificationResponse> getByUser(String userId) {
-        return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(NotificationDtos.NotificationResponse::new)
-                .collect(Collectors.toList());
-    }
+    private void writeBookingFile(String id, LocalDateTime createdAt, NotificationDtos.CreateNotificationRequest req) {
+        try {
+            Path dir = Paths.get(bookingFilesDir);
+            Files.createDirectories(dir);
 
-    public NotificationDtos.NotificationResponse getById(String id) {
-        Notification n = notificationRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Notification not found"));
-        return new NotificationDtos.NotificationResponse(n);
+            Path file = dir.resolve("booking-" + req.getItinNumber() + "-" + id + ".txt");
+
+            String content = "===== BOOKING NOTIFICATION =====\n" +
+                    "Itinerary Number : " + req.getItinNumber() + "\n" +
+                    "User Name        : " + req.getUserName() + "\n" +
+                    "User Email       : " + (req.getUserEmail() != null ? req.getUserEmail() : "N/A") + "\n" +
+                    "Message          : " + req.getMessage() + "\n" +
+                    "Created At       : " + createdAt + "\n" +
+                    "================================\n";
+
+            Files.writeString(file, content);
+            log.info("[NOTIFICATION] Booking file written: {}", file.toAbsolutePath());
+        } catch (IOException e) {
+            log.error("[NOTIFICATION] Failed to write booking file for itinNumber={}: {}", req.getItinNumber(), e.getMessage());
+        }
     }
 }

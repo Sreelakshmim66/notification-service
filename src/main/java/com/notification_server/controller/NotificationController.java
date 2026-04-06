@@ -30,16 +30,4 @@ public class NotificationController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(notificationService.send(req));
     }
-
-    // GET /api/notifications/user/{userId}
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<NotificationDtos.NotificationResponse>> getByUser(@PathVariable String userId) {
-        return ResponseEntity.ok(notificationService.getByUser(userId));
-    }
-
-    // GET /api/notifications/{id}
-    @GetMapping("/{id}")
-    public ResponseEntity<NotificationDtos.NotificationResponse> getById(@PathVariable String id) {
-        return ResponseEntity.ok(notificationService.getById(id));
-    }
 }
